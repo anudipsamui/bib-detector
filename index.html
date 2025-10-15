@@ -1,18 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>BIB Detector with Roboflow</title>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <style>
-    body { font-family: sans-serif; text-align: center; background: #fafafa; margin: 0; padding: 20px; }
-    #videoContainer { position: relative; display: inline-block; margin-top: 20px; }
-    video { width: 90%; max-width: 400px; border-radius: 12px; display: none; }
-    canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
-    button { margin: 10px; padding: 10px 20px; }
-    table { margin: auto; margin-top: 10px; border-collapse: collapse; }
-    table, th, td { border: 1px solid black; padding: 5px 10px; }
-  </style>
+<meta charset="UTF-8">
+<title>BIB Detector - Roboflow SDK + OCR</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://unpkg.com/@roboflow/inference-browser@1.1.0/dist/roboflow-inference.min.js"></script>
+<style>
+body { font-family: sans-serif; text-align: center; background: #fafafa; margin: 0; padding: 20px; }
+#videoContainer { position: relative; display: inline-block; margin-top: 20px; }
+video { width: 90%; max-width: 400px; border-radius: 12px; display: none; }
+canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+button { margin: 10px; padding: 10px 20px; }
+table { margin: auto; margin-top: 10px; border-collapse: collapse; }
+table, th, td { border: 1px solid black; padding: 5px 10px; }
+</style>
 </head>
 <body>
 
@@ -31,101 +32,101 @@
 </table>
 
 <script>
-  const video = document.getElementById('video');
-  const overlay = document.getElementById('overlay');
-  const ctx = overlay.getContext('2d');
-  const startBtn = document.getElementById('startBtn');
-  const downloadBtn = document.getElementById('downloadBtn');
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const ctx = overlay.getContext('2d');
+const startBtn = document.getElementById('startBtn');
+const downloadBtn = document.getElementById('downloadBtn');
 
-  let stream;
-  let interval;
+let stream;
+let model;
 
-  // --- YOUR ROBOFLOW API SETTINGS ---
-  const ROBLOW_MODEL_URL = "https://detect.roboflow.com/bib-number-labeling/2"; // model endpoint
-  const API_KEY = "b6WP8Jycybyu3u4mLtrM"; // replace with your key
+// Replace with your **publishable key** from Roboflow
+const ROBFLOW_PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1"; 
+const PROJECT_NAME = "bib-number-labeling";
+const MODEL_VERSION = "2";
 
-  startBtn.addEventListener('click', async () => {
+startBtn.addEventListener('click', async () => {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      video.srcObject = stream;
-      video.style.display = "block";
-      await video.play();
+        // Start camera
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        video.srcObject = stream;
+        video.style.display = "block";
+        await video.play();
 
-      overlay.width = video.videoWidth;
-      overlay.height = video.videoHeight;
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
 
-      interval = setInterval(runDetection, 1500); // every 1.5s
-      startBtn.disabled = true;
-      startBtn.innerText = "Detecting...";
-    } catch (err) {
-      alert("Camera failed: " + err.message);
-      console.error(err);
+        // Load Roboflow model
+        const rf = new Roboflow({ apiKey: ROBFLOW_PUBLISHABLE_KEY });
+        model = await rf.load(PROJECT_NAME, MODEL_VERSION);
+
+        startBtn.disabled = true;
+        startBtn.innerText = "Detecting...";
+
+        // Start detection loop
+        detectLoop();
+    } catch(err) {
+        alert("Failed to start: " + err.message);
+        console.error(err);
     }
-  });
+});
 
-  async function runDetection() {
+async function detectLoop() {
+    if (!model) return;
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const cctx = canvas.getContext('2d');
-      cctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const dataURL = canvas.toDataURL('image/jpeg');
+        // Predict on video element
+        const predictions = await model.predict(video);
 
-      const response = await fetch(`${ROBLOW_MODEL_URL}?api_key=${API_KEY}`, {
-        method: 'POST',
-        body: dataURL,
-      });
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-      const predictions = await response.json();
+        for (const p of predictions) {
+            const { x, y, width, height, className } = p;
 
-      ctx.clearRect(0, 0, overlay.width, overlay.height);
+            // Draw bounding box
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x, y, width, height);
+            ctx.font = "18px Arial";
+            ctx.fillStyle = "red";
+            ctx.fillText(className, x, y - 5);
 
-      for (const p of predictions?.predictions || []) {
-        const { x, y, width, height, class: cls } = p;
+            // Crop box for OCR
+            const cropCanvas = document.createElement('canvas');
+            cropCanvas.width = width;
+            cropCanvas.height = height;
+            const cropCtx = cropCanvas.getContext('2d');
+            cropCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
 
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 3;
-        ctx.strokeRect(x, y, width, height);
-        ctx.font = "18px Arial";
-        ctx.fillStyle = "red";
-        ctx.fillText(cls, x, y - 5);
-
-        const cropCanvas = document.createElement('canvas');
-        cropCanvas.width = width;
-        cropCanvas.height = height;
-        const cropCtx = cropCanvas.getContext('2d');
-        cropCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
-
-        const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
-        const bibNumber = text.replace(/\D/g, '').trim();
-
-        if (bibNumber) addToTable(bibNumber);
-      }
-
-    } catch (err) {
-      console.error("Detection failed", err);
+            // OCR using Tesseract
+            const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
+            const bibNumber = text.replace(/\D/g,'').trim();
+            if (bibNumber) addToTable(bibNumber);
+        }
+    } catch(err) {
+        console.error("Detection error:", err);
     }
-  }
 
-  function addToTable(bib) {
+    // Repeat next frame
+    requestAnimationFrame(detectLoop);
+}
+
+function addToTable(bib) {
     const table = document.getElementById('bibTable');
-    const existing = Array.from(table.rows).some(r => r.cells[0]?.innerText === bib);
-    if (existing) return; // avoid duplicates
+    const exists = Array.from(table.rows).some(r => r.cells[0]?.innerText === bib);
+    if (exists) return;
     const row = table.insertRow(-1);
-    const cell1 = row.insertCell(0);
-    const cell2 = row.insertCell(1);
-    cell1.innerText = bib;
-    cell2.innerText = new Date().toLocaleTimeString();
-  }
+    row.insertCell(0).innerText = bib;
+    row.insertCell(1).innerText = new Date().toLocaleTimeString();
+}
 
-  downloadBtn.addEventListener('click', () => {
+downloadBtn.addEventListener('click', () => {
     const table = document.getElementById('bibTable');
     let csv = '';
-    for (let i = 0; i < table.rows.length; i++) {
-      const row = table.rows[i];
-      const cells = Array.from(row.cells).map(c => c.innerText.replace(/,/g, ''));
-      csv += cells.join(',') + '\n';
+    for (let i=0; i<table.rows.length; i++){
+        const row = table.rows[i];
+        const cells = Array.from(row.cells).map(c => c.innerText.replace(/,/g,''));
+        csv += cells.join(',') + '\n';
     }
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -134,7 +135,7 @@
     a.download = 'bib_numbers.csv';
     a.click();
     URL.revokeObjectURL(url);
-  });
+});
 </script>
 
 </body>
