@@ -30,6 +30,7 @@ table, th, td { border: 1px solid black; padding: 5px 10px; }
   <tr><th>BIB Number</th><th>Timestamp</th></tr>
 </table>
 
+<!-- Module script at end of body -->
 <script type="module">
 import { Roboflow } from "https://unpkg.com/@roboflow/inference-browser@1.1.0/dist/roboflow-inference.min.js";
 
@@ -47,10 +48,10 @@ const ROBFLOW_PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1";
 const PROJECT_NAME = "bib-number-labeling";
 const MODEL_VERSION = "2";
 
-// Main start button
+// Start button click handler
 startBtn.addEventListener('click', async () => {
     try {
-        // 1️⃣ Open camera first (must be user gesture)
+        // Open camera
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         video.srcObject = stream;
         video.style.display = "block";
@@ -59,17 +60,17 @@ startBtn.addEventListener('click', async () => {
         overlay.width = video.videoWidth;
         overlay.height = video.videoHeight;
 
-        // 2️⃣ Load Roboflow model
+        // Load Roboflow model
         const rf = new Roboflow({ apiKey: ROBFLOW_PUBLISHABLE_KEY });
         model = await rf.load(PROJECT_NAME, MODEL_VERSION);
 
         startBtn.disabled = true;
         startBtn.innerText = "Detecting...";
 
-        // 3️⃣ Start detection loop
+        // Start detection loop
         requestAnimationFrame(detectLoop);
-    } catch (err) {
-        console.error("Failed to start camera or model:", err);
+    } catch(err) {
+        console.error("Camera or model failed:", err);
         alert(err.message);
     }
 });
@@ -80,7 +81,6 @@ async function detectLoop() {
 
     try {
         const predictions = await model.predict(video);
-
         ctx.clearRect(0, 0, overlay.width, overlay.height);
 
         for (const p of predictions) {
@@ -94,7 +94,7 @@ async function detectLoop() {
             ctx.fillStyle = "red";
             ctx.fillText(className, x, y - 5);
 
-            // Crop the detected box for OCR
+            // Crop for OCR
             const cropCanvas = document.createElement('canvas');
             cropCanvas.width = width;
             cropCanvas.height = height;
