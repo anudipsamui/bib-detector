@@ -4,7 +4,13 @@
 <meta charset="UTF-8">
 <title>BIB Detector - Roboflow SDK + OCR</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="https://unpkg.com/@roboflow/inference-browser@1.1.0/dist/roboflow-inference.min.js"></script>
+
+<!-- Roboflow Browser SDK -->
+<script type="module">
+  import { Roboflow } from "https://unpkg.com/@roboflow/inference-browser@1.1.0/dist/roboflow-inference.min.js";
+  window.Roboflow = Roboflow; // expose globally
+</script>
+
 <style>
 body { font-family: sans-serif; text-align: center; background: #fafafa; margin: 0; padding: 20px; }
 #videoContainer { position: relative; display: inline-block; margin-top: 20px; }
@@ -41,8 +47,8 @@ const downloadBtn = document.getElementById('downloadBtn');
 let stream;
 let model;
 
-// Replace with your **publishable key** from Roboflow
-const ROBFLOW_PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1"; 
+// --- Roboflow Settings ---
+const ROBFLOW_PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1";
 const PROJECT_NAME = "bib-number-labeling";
 const MODEL_VERSION = "2";
 
@@ -74,6 +80,7 @@ startBtn.addEventListener('click', async () => {
 
 async function detectLoop() {
     if (!model) return;
+
     try {
         // Predict on video element
         const predictions = await model.predict(video);
