@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BIB Detector - Live Camera + OCR</title>
+<script src="https://cdn.jsdelivr.net/npm/inferencejs@1.1.3"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+body { font-family:sans-serif; text-align:center; background:#fafafa; margin:0; padding:20px;}
+h1 { margin-bottom:10px }
+video { width:90%; max-width:400px; border-radius:12px; box-shadow:0 0 10px #888;}
+table { margin:20px auto; border-collapse:collapse; width:80%; max-width:500px;}
+th, td { border:1px solid #ccc; padding:8px; }
+button { margin:6px; padding:10px 18px; border:none; border-radius:8px; background:#007bff; color:#fff; font-weight:bold;}
+button:hover { background:#0056b3;}
+</style>
+</head>
+<body>
+
+<h1>🏃‍♂️ Live BIB Detector</h1>
+<video id="video" autoplay playsinline></video>
+<table id="resultsTable">
+<tr><th>BIB</th><th>Timestamp</th></tr>
+</table>
+<button onclick="downloadCSV()">⬇️ Download CSV</button>
+
+<script type="module">
+import { InferenceEngine, CVImage } from "https://cdn.jsdelivr.net/npm/inferencejs@1.1.3/dist/inferencejs.min.js";
+
+let results = [];
+const MODEL_NAME = "bib-number-labeling";      // Roboflow model name
+const MODEL_VERSION = "2";                     // Roboflow model version
+const PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1"; // replace with your key
+
+// --- 1. Initialize Inference Engine ---
+const inferEngine = new InferenceEngine();
+const workerId = await inferEngine.startWorker(MODEL_NAME, MODEL_VERSION, PUBLISHABLE_KEY);
+console.log("Worker started:", workerId);
+
+// --- 2. Start camera ---
+const video = document.getElementById("video");
+const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } });
+video.srcObject = stream;
+await new Promise(r => video.onloadedmetadata = r);
+
+// --- 3. Process frame every 2s ---
+async function processFrame() {
+    const cvimg = new CVImage(video);
+    const predictions = await inferEngine.infer(workerId, cvimg);
+
+    for (const p of predictions) {
+        const { x, y, width, height } = p.bbox;
+
+        // Crop detected bib region
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = width;
+        cropCanvas.height = height;
+        const ctx = cropCanvas.getContext('2d');
+        ctx.drawImage(video, x, y, width, height, 0, 0, width, height);
+        const cropDataUrl = cropCanvas.toDataURL();
+
+        // Run OCR on crop
+        const { data:{ text } } = await Tesseract.recognize(cropDataUrl, 'eng', {
+            tessedit_char_whitelist: '0123456789'
+        });
+        const bib = text.match(/\d{2,6}/)?.[0];
+        if(bib && !results.find(r=>r.bib===bib)) { // avoid duplicates
+            const timestamp = new Date().toLocaleString();
+            results.push({ bib, timestamp });
+            const row = document.getElementById("resultsTable").insertRow();
+            row.insertCell(0).innerText = bib;
+            row.insertCell(1).innerText = timestamp;
+        }
+    }
+}
+
+setInterval(processFrame, 2000);
+
+// --- 4. Download CSV ---
+function downloadCSV() {
+    let csv = "BIB,Timestamp\n";
+    results.forEach(r => csv += `${r.bib},${r.timestamp}\n`);
+    const blob = new Blob([csv], {type:"text/csv"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "bib_results.csv";
+    a.click();
+}
+</script>
+</body>
+</html>
