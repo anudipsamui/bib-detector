@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>BIB Detector - Optimized</title>
+<title>BIB Detector - Start/Stop Detection</title>
 <script src="https://cdn.jsdelivr.net/npm/inferencejs@1.1.3"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 body { font-family:sans-serif; text-align:center; background:#fafafa; margin:0; padding:20px;}
 h1 { margin-bottom:10px }
-#videoContainer { position:relative; display:inline-block; }
-video { width:90%; max-width:400px; border-radius:12px; box-shadow:0 0 10px #888; }
+#videoContainer { position:relative; display:inline-block; margin-top:20px; }
+video { width:90%; max-width:400px; border-radius:12px; box-shadow:0 0 10px #888; display:none; }
 canvas { position:absolute; top:0; left:0; pointer-events:none; }
 table { margin:20px auto; border-collapse:collapse; width:80%; max-width:500px;}
 th, td { border:1px solid #ccc; padding:8px; }
@@ -19,11 +19,15 @@ button:hover { background:#0056b3;}
 </head>
 <body>
 
-<h1>🏃‍♂️ Live BIB Detector (Optimized)</h1>
+<h1>🏃‍♂️ Live BIB Detector</h1>
+<button id="startBtn">▶️ Start Detection</button>
+<button id="stopBtn" disabled>⏹ Stop Detection</button>
+
 <div id="videoContainer">
   <video id="video" autoplay playsinline></video>
   <canvas id="overlay"></canvas>
 </div>
+
 <table id="resultsTable">
 <tr><th>BIB</th><th>Timestamp</th></tr>
 </table>
@@ -38,20 +42,46 @@ const PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1";
 
 const inferEngine = new InferenceEngine();
 const workerId = await inferEngine.startWorker(MODEL_NAME, MODEL_VERSION, PUBLISHABLE_KEY);
-console.log("Worker started:", workerId);
 
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
 const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
 const ctx = overlay.getContext("2d");
+
 const results = [];
-const ocrQueue = new Set(); // track bibs being processed
+const ocrQueue = new Set();
+let detectionInterval;
+let stream;
 
-const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } });
-video.srcObject = stream;
-await new Promise(r => video.onloadedmetadata = r);
+startBtn.addEventListener("click", async () => {
+    // Request camera
+    stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } });
+    video.srcObject = stream;
+    video.style.display = "block";
+    await new Promise(r => video.onloadedmetadata = r);
+    overlay.width = video.videoWidth;
+    overlay.height = video.videoHeight;
 
-overlay.width = video.videoWidth;
-overlay.height = video.videoHeight;
+    detectionInterval = setInterval(processFrame, 2000);
+
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    startBtn.innerText = "🎥 Detecting...";
+});
+
+stopBtn.addEventListener("click", () => {
+    if(stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
+    video.style.display = "none";
+    ctx.clearRect(0,0,overlay.width,overlay.height);
+    clearInterval(detectionInterval);
+
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    startBtn.innerText = "▶️ Start Detection";
+});
 
 async function processFrame() {
     const cvimg = new CVImage(video);
@@ -70,7 +100,6 @@ async function processFrame() {
         ctx.fillStyle = "red";
         ctx.fillText(p.className + " " + Math.round(p.confidence*100)+"%", x, y-5);
 
-        // Only OCR if this bbox not being processed
         const key = `${x}_${y}_${width}_${height}`;
         if(!ocrQueue.has(key)) {
             ocrQueue.add(key);
@@ -99,9 +128,6 @@ async function processFrame() {
         }
     }
 }
-
-// Run every 2s
-setInterval(processFrame, 2000);
 
 function downloadCSV() {
     let csv = "BIB,Timestamp\n";
