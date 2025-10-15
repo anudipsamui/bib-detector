@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>BIB Detector</title>
+<title>BIB Detector Hosted API</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 body { font-family: sans-serif; text-align: center; background: #fafafa; margin: 0; padding: 20px; }
@@ -16,7 +16,7 @@ table, th, td { border: 1px solid black; padding: 5px 10px; }
 </head>
 <body>
 
-<h1>BIB Detector</h1>
+<h1>BIB Detector (Hosted API)</h1>
 <button id="startBtn">Start Camera & Detection</button>
 <button id="downloadBtn">Download CSV</button>
 
@@ -30,28 +30,23 @@ table, th, td { border: 1px solid black; padding: 5px 10px; }
   <tr><th>BIB Number</th><th>Timestamp</th></tr>
 </table>
 
-<!-- Module script at end of body -->
-<script type="module">
-import { Roboflow } from "https://unpkg.com/@roboflow/inference-browser@1.1.0/dist/roboflow-inference.min.js";
-
+<script>
 const video = document.getElementById('video');
 const overlay = document.getElementById('overlay');
 const ctx = overlay.getContext('2d');
 const startBtn = document.getElementById('startBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 
-let model;
-let detectedBibs = new Set();
+const detectedBibs = new Set();
 
-// Roboflow settings
-const ROBFLOW_PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1";
-const PROJECT_NAME = "bib-number-labeling";
-const MODEL_VERSION = "2";
+// --- Replace with your Roboflow Hosted API info ---
+const API_KEY = "b6WP8Jycybyu3u4mLtrM";
+const PROJECT_NAME = "marco-cheung/bib-number-labeling";
+const MODEL_VERSION = "v14 2023-12-16 8:33am";
 
-// Start button click handler
+// Start button: camera + detection
 startBtn.addEventListener('click', async () => {
     try {
-        // Open camera
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         video.srcObject = stream;
         video.style.display = "block";
@@ -60,33 +55,47 @@ startBtn.addEventListener('click', async () => {
         overlay.width = video.videoWidth;
         overlay.height = video.videoHeight;
 
-        // Load Roboflow model
-        const rf = new Roboflow({ apiKey: ROBFLOW_PUBLISHABLE_KEY });
-        model = await rf.load(PROJECT_NAME, MODEL_VERSION);
-
         startBtn.disabled = true;
         startBtn.innerText = "Detecting...";
 
-        // Start detection loop
-        requestAnimationFrame(detectLoop);
+        detectLoop();
     } catch(err) {
-        console.error("Camera or model failed:", err);
+        console.error("Camera error:", err);
         alert(err.message);
     }
 });
 
 // Detection loop
 async function detectLoop() {
-    if (!model) return;
+    if (video.readyState !== 4) {
+        requestAnimationFrame(detectLoop);
+        return;
+    }
+
+    // Capture frame
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = video.videoWidth;
+    tempCanvas.height = video.videoHeight;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+    // Convert frame to base64
+    const dataUrl = tempCanvas.toDataURL('image/jpeg');
 
     try {
-        const predictions = await model.predict(video);
+        // Call Roboflow Hosted API
+        const res = await fetch(`https://detect.roboflow.com/${PROJECT_NAME}/${MODEL_VERSION}?api_key=${API_KEY}`, {
+            method: 'POST',
+            body: dataUrl,
+        });
+        const data = await res.json();
+
         ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-        for (const p of predictions) {
-            const { x, y, width, height, className } = p;
+        for (const obj of data.predictions) {
+            const { x, y, width, height, class: className } = obj;
 
-            // Draw bounding box
+            // Draw box
             ctx.strokeStyle = "red";
             ctx.lineWidth = 3;
             ctx.strokeRect(x, y, width, height);
@@ -101,7 +110,6 @@ async function detectLoop() {
             const cropCtx = cropCanvas.getContext('2d');
             cropCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
 
-            // OCR with Tesseract
             const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
             const bibNumber = text.replace(/\D/g,'').trim();
             if (bibNumber && !detectedBibs.has(bibNumber)) {
@@ -109,8 +117,9 @@ async function detectLoop() {
                 addToTable(bibNumber);
             }
         }
+
     } catch(err) {
-        console.error("Detection error:", err);
+        console.error("Roboflow API error:", err);
     }
 
     requestAnimationFrame(detectLoop);
