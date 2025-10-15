@@ -1,18 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>BIB Detector + OCR + CSV</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<style>
-body { font-family:sans-serif; text-align:center; background:#fafafa; margin:0; padding:20px;}
-#videoContainer { position:relative; display:inline-block; margin-top:20px; }
-video { width:90%; max-width:400px; border-radius:12px; display:none; }
-canvas { position:absolute; top:0; left:0; pointer-events:none; }
-button { margin:10px; padding:10px 20px; }
-table { margin:auto; margin-top:10px; border-collapse: collapse; }
-table, th, td { border:1px solid black; padding:5px 10px; }
-</style>
+  <meta charset="UTF-8">
+  <title>BIB Detector with Roboflow</title>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #fafafa; margin: 0; padding: 20px; }
+    #videoContainer { position: relative; display: inline-block; margin-top: 20px; }
+    video { width: 90%; max-width: 400px; border-radius: 12px; display: none; }
+    canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+    button { margin: 10px; padding: 10px 20px; }
+    table { margin: auto; margin-top: 10px; border-collapse: collapse; }
+    table, th, td { border: 1px solid black; padding: 5px 10px; }
+  </style>
 </head>
 <body>
 
@@ -31,85 +31,84 @@ table, th, td { border:1px solid black; padding:5px 10px; }
 </table>
 
 <script>
-const video = document.getElementById('video');
-const overlay = document.getElementById('overlay');
-const ctx = overlay.getContext('2d');
-const startBtn = document.getElementById('startBtn');
-const downloadBtn = document.getElementById('downloadBtn');
+  const video = document.getElementById('video');
+  const overlay = document.getElementById('overlay');
+  const ctx = overlay.getContext('2d');
+  const startBtn = document.getElementById('startBtn');
+  const downloadBtn = document.getElementById('downloadBtn');
 
-let stream;
-let interval;
+  let stream;
+  let interval;
 
-// --- YOUR ROBFLOW API SETTINGS ---
-const ROBFLOW_MODEL_URL = "https://detect.roboflow.com/bib-number-labeling/2";
-const API_KEY = "[YOUR_API_KEY]"; // replace with your key
+  // --- YOUR ROBOFLOW API SETTINGS ---
+  const ROBLOW_MODEL_URL = "https://detect.roboflow.com/bib-number-labeling/2"; // model endpoint
+  const API_KEY = "b6WP8Jycybyu3u4mLtrM"; // replace with your key
 
-startBtn.addEventListener('click', async () => {
+  startBtn.addEventListener('click', async () => {
     try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-        video.srcObject = stream;
-        video.style.display = "block";
-        await video.play();
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      video.srcObject = stream;
+      video.style.display = "block";
+      await video.play();
 
-        overlay.width = video.videoWidth;
-        overlay.height = video.videoHeight;
+      overlay.width = video.videoWidth;
+      overlay.height = video.videoHeight;
 
-        interval = setInterval(runDetection, 1500);
-
-        startBtn.disabled = true;
-        startBtn.innerText = "Detecting...";
-    } catch(err) {
-        alert("Camera failed: " + err.message);
-        console.error(err);
+      interval = setInterval(runDetection, 1500); // every 1.5s
+      startBtn.disabled = true;
+      startBtn.innerText = "Detecting...";
+    } catch (err) {
+      alert("Camera failed: " + err.message);
+      console.error(err);
     }
-});
+  });
 
-async function runDetection() {
+  async function runDetection() {
     try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const cctx = canvas.getContext('2d');
-        cctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataURL = canvas.toDataURL('image/jpeg');
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const cctx = canvas.getContext('2d');
+      cctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataURL = canvas.toDataURL('image/jpeg');
 
-        const response = await fetch(`${ROBLOW_MODEL_URL}?api_key=${API_KEY}`, {
-            method: 'POST',
-            body: dataURL,
-        });
+      const response = await fetch(`${ROBLOW_MODEL_URL}?api_key=${API_KEY}`, {
+        method: 'POST',
+        body: dataURL,
+      });
 
-        const predictions = await response.json();
+      const predictions = await response.json();
 
-        ctx.clearRect(0,0,overlay.width,overlay.height);
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-        for (const p of predictions?.predictions || []) {
-            const { x, y, width, height, class: cls } = p;
+      for (const p of predictions?.predictions || []) {
+        const { x, y, width, height, class: cls } = p;
 
-            ctx.strokeStyle = "red";
-            ctx.lineWidth = 3;
-            ctx.strokeRect(x, y, width, height);
-            ctx.font = "18px Arial";
-            ctx.fillStyle = "red";
-            ctx.fillText(cls, x, y-5);
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, width, height);
+        ctx.font = "18px Arial";
+        ctx.fillStyle = "red";
+        ctx.fillText(cls, x, y - 5);
 
-            const cropCanvas = document.createElement('canvas');
-            cropCanvas.width = width;
-            cropCanvas.height = height;
-            const cropCtx = cropCanvas.getContext('2d');
-            cropCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = width;
+        cropCanvas.height = height;
+        const cropCtx = cropCanvas.getContext('2d');
+        cropCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
 
-            const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
-            const bibNumber = text.replace(/\D/g, '').trim();
+        const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
+        const bibNumber = text.replace(/\D/g, '').trim();
 
-            if (bibNumber) addToTable(bibNumber);
-        }
+        if (bibNumber) addToTable(bibNumber);
+      }
 
-    } catch(err) {
-        console.error("Detection failed", err);
+    } catch (err) {
+      console.error("Detection failed", err);
     }
-}
+  }
 
-function addToTable(bib) {
+  function addToTable(bib) {
     const table = document.getElementById('bibTable');
     const existing = Array.from(table.rows).some(r => r.cells[0]?.innerText === bib);
     if (existing) return; // avoid duplicates
@@ -118,15 +117,15 @@ function addToTable(bib) {
     const cell2 = row.insertCell(1);
     cell1.innerText = bib;
     cell2.innerText = new Date().toLocaleTimeString();
-}
+  }
 
-downloadBtn.addEventListener('click', () => {
+  downloadBtn.addEventListener('click', () => {
     const table = document.getElementById('bibTable');
     let csv = '';
-    for (let i=0; i<table.rows.length; i++){
-        const row = table.rows[i];
-        const cells = Array.from(row.cells).map(c => c.innerText.replace(/,/g,''));
-        csv += cells.join(',') + '\n';
+    for (let i = 0; i < table.rows.length; i++) {
+      const row = table.rows[i];
+      const cells = Array.from(row.cells).map(c => c.innerText.replace(/,/g, ''));
+      csv += cells.join(',') + '\n';
     }
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -135,7 +134,7 @@ downloadBtn.addEventListener('click', () => {
     a.download = 'bib_numbers.csv';
     a.click();
     URL.revokeObjectURL(url);
-});
+  });
 </script>
 
 </body>
