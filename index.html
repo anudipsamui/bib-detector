@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>BIB Detector - Camera Test</title>
+<title>BIB Detector + Roboflow</title>
 <style>
 body { font-family:sans-serif; text-align:center; background:#fafafa; margin:0; padding:20px;}
 #videoContainer { position:relative; display:inline-block; margin-top:20px; }
@@ -13,8 +13,8 @@ button { margin:10px; padding:10px 20px; }
 </head>
 <body>
 
-<h1>Camera Test</h1>
-<button id="startBtn">Start Camera</button>
+<h1>BIB Detector</h1>
+<button id="startBtn">Start Detection</button>
 <div id="videoContainer">
   <video id="video" autoplay playsinline></video>
   <canvas id="overlay"></canvas>
@@ -29,34 +29,64 @@ const startBtn = document.getElementById('startBtn');
 let stream;
 let interval;
 
+// --- YOUR ROBFLOW API SETTINGS ---
+const ROBFLOW_MODEL_URL = "https://detect.roboflow.com/bib-number-labeling/2"; // model endpoint
+const API_KEY = "[YOUR_API_KEY]"; // Roboflow API key
+
 startBtn.addEventListener('click', async () => {
     try {
+        // Start camera
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         video.srcObject = stream;
         video.style.display = "block";
         await video.play();
 
-        // Resize overlay canvas
         overlay.width = video.videoWidth;
         overlay.height = video.videoHeight;
 
-        // Simple detection simulation (just draw moving rectangle)
-        let x = 0;
-        interval = setInterval(() => {
-            ctx.clearRect(0,0,overlay.width,overlay.height);
-            ctx.strokeStyle = "red";
-            ctx.lineWidth = 3;
-            ctx.strokeRect(x, 50, 100, 50);
-            x = (x + 5) % overlay.width;
-        }, 100);
-
+        // Start detection loop
+        interval = setInterval(runDetection, 1500); // every 1.5s
         startBtn.disabled = true;
-        startBtn.innerText = "Camera On";
+        startBtn.innerText = "Detecting...";
     } catch(err) {
         alert("Camera failed: " + err.message);
         console.error(err);
     }
 });
+
+async function runDetection() {
+    try {
+        // Capture current frame
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const cctx = canvas.getContext('2d');
+        cctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataURL = canvas.toDataURL('image/jpeg');
+
+        // Send to Roboflow API
+        const response = await fetch(`${ROBLOW_MODEL_URL}?api_key=${API_KEY}`, {
+            method: 'POST',
+            body: dataURL,
+        });
+
+        const predictions = await response.json();
+
+        // Draw overlay
+        ctx.clearRect(0,0,overlay.width,overlay.height);
+        predictions?.predictions?.forEach(p => {
+            const { x, y, width, height, class: cls } = p;
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x, y, width, height);
+            ctx.font = "18px Arial";
+            ctx.fillStyle = "red";
+            ctx.fillText(cls, x, y-5);
+        });
+    } catch(err) {
+        console.error("Detection failed", err);
+    }
+}
 </script>
 
 </body>
