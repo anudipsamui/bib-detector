@@ -2,36 +2,88 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>BIB Detector - Camera Test</title>
+<title>BIB Detector - Camera + Overlay</title>
 <script src="https://cdn.jsdelivr.net/npm/inferencejs@1.1.3"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
+body { font-family:sans-serif; text-align:center; background:#fafafa; margin:0; padding:20px;}
 video { width:90%; max-width:400px; border-radius:12px; margin-top:20px; display:none; }
+canvas { position:absolute; top:0; left:0; pointer-events:none; }
 button { margin:10px; padding:10px 20px; }
+#videoContainer { position:relative; display:inline-block; }
 </style>
 </head>
 <body>
 
-<h1>Camera Test</h1>
-<button id="startBtn">Start Camera</button>
-<video id="video" autoplay playsinline></video>
+<h1>Camera + Overlay Test</h1>
+<button id="startBtn">Start Detection</button>
+<div id="videoContainer">
+  <video id="video" autoplay playsinline></video>
+  <canvas id="overlay"></canvas>
+</div>
 
 <script>
 const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const ctx = overlay.getContext('2d');
 const startBtn = document.getElementById('startBtn');
 
-startBtn.addEventListener('click', async () => {
+let stream;
+let inferEngine;
+let workerId;
+let detectionInterval;
+
+// Replace with your Roboflow publishable key
+const MODEL_NAME = "bib-number-labeling";
+const MODEL_VERSION = "2";
+const PUBLISHABLE_KEY = "[YOUR_PUBLISHABLE_KEY]";
+
+async function startDetection() {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } });
+        // Start camera
+        stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } });
         video.srcObject = stream;
         video.style.display = "block";
         await video.play();
-        alert("Camera started successfully!");
+
+        // Setup canvas size
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+
+        // Initialize Roboflow Inference
+        inferEngine = new InferenceEngine();
+        workerId = await inferEngine.startWorker(MODEL_NAME, MODEL_VERSION, PUBLISHABLE_KEY);
+
+        // Start inference loop
+        detectionInterval = setInterval(processFrame, 1000);
+
+        startBtn.disabled = true;
+        startBtn.innerText = "Detecting...";
     } catch(err) {
-        alert("Camera failed: " + err.message);
+        alert("Failed: " + err.message);
         console.error(err);
     }
-});
+}
+
+async function processFrame() {
+    if (!video.videoWidth) return;
+    const cvimg = new CVImage(video); // Using InferenceJS CVImage
+    const predictions = await inferEngine.infer(workerId, cvimg);
+
+    ctx.clearRect(0,0,overlay.width, overlay.height);
+
+    // Draw bounding boxes
+    for (const p of predictions) {
+        const { x, y, width, height } = p.bbox;
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, width, height);
+        ctx.font = "18px Arial";
+        ctx.fillStyle = "red";
+        ctx.fillText(p.className + " " + Math.round(p.confidence*100) + "%", x, y-5);
+    }
+}
+
+startBtn.addEventListener('click', startDetection);
 </script>
 
 </body>
