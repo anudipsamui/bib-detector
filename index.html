@@ -1,41 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>BIB Detector - Start/Stop Detection</title>
-<script src="https://cdn.jsdelivr.net/npm/inferencejs@1.1.3"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<style>
-body { font-family:sans-serif; text-align:center; background:#fafafa; margin:0; padding:20px;}
-h1 { margin-bottom:10px }
-#videoContainer { position:relative; display:inline-block; margin-top:20px; }
-video { width:90%; max-width:400px; border-radius:12px; box-shadow:0 0 10px #888; display:none; }
-canvas { position:absolute; top:0; left:0; pointer-events:none; }
-table { margin:20px auto; border-collapse:collapse; width:80%; max-width:500px;}
-th, td { border:1px solid #ccc; padding:8px; }
-button { margin:6px; padding:10px 18px; border:none; border-radius:8px; background:#007bff; color:#fff; font-weight:bold;}
-button:hover { background:#0056b3;}
-</style>
-</head>
-<body>
-
-<h1>🏃‍♂️ Live BIB Detector</h1>
-<button id="startBtn">▶️ Start Detection</button>
-<button id="stopBtn" disabled>⏹ Stop Detection</button>
-
-<div id="videoContainer">
-  <video id="video" autoplay playsinline></video>
-  <canvas id="overlay"></canvas>
-</div>
-
-<table id="resultsTable">
-<tr><th>BIB</th><th>Timestamp</th></tr>
-</table>
-<button onclick="downloadCSV()">⬇️ Download CSV</button>
-
 <script type="module">
 import { InferenceEngine, CVImage } from "https://cdn.jsdelivr.net/npm/inferencejs@1.1.3/dist/inferencejs.min.js";
 
+// Roboflow model
 const MODEL_NAME = "bib-number-labeling";
 const MODEL_VERSION = "2";
 const PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1";
@@ -54,36 +20,45 @@ const ocrQueue = new Set();
 let detectionInterval;
 let stream;
 
-startBtn.addEventListener("click", async () => {
-    // Request camera
-    stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } });
-    video.srcObject = stream;
-    video.style.display = "block";
-    await new Promise(r => video.onloadedmetadata = r);
-    overlay.width = video.videoWidth;
-    overlay.height = video.videoHeight;
-
-    detectionInterval = setInterval(processFrame, 2000);
-
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    startBtn.innerText = "🎥 Detecting...";
+// --- Web Worker for Tesseract OCR ---
+const ocrWorker = Tesseract.createWorker({
+    logger: m => console.log(m)
 });
+await ocrWorker.load();
+await ocrWorker.loadLanguage('eng');
+await ocrWorker.initialize('eng');
+await ocrWorker.setParameters({ tessedit_char_whitelist: '0123456789' });
 
-stopBtn.addEventListener("click", () => {
-    if(stream) {
-        stream.getTracks().forEach(track => track.stop());
+async function startDetection() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" } });
+        video.srcObject = stream;
+        video.style.display = "block";
+        await video.play();
+        overlay.width = video.videoWidth;
+        overlay.height = video.videoHeight;
+        detectionInterval = setInterval(processFrame, 1000); // faster detection
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        startBtn.innerText = "🎥 Detecting...";
+    } catch(err) {
+        alert("Camera access failed: " + err.message);
+        console.error(err);
     }
+}
+
+function stopDetection() {
+    if(stream) stream.getTracks().forEach(track => track.stop());
     video.style.display = "none";
     ctx.clearRect(0,0,overlay.width,overlay.height);
     clearInterval(detectionInterval);
-
     startBtn.disabled = false;
     stopBtn.disabled = true;
     startBtn.innerText = "▶️ Start Detection";
-});
+}
 
 async function processFrame() {
+    if (!video.videoWidth) return;
     const cvimg = new CVImage(video);
     const predictions = await inferEngine.infer(workerId, cvimg);
 
@@ -91,34 +66,34 @@ async function processFrame() {
 
     for (const p of predictions) {
         const { x, y, width, height } = p.bbox;
+        let detectedBib = false;
+        for(const r of results){
+            if(Math.abs(r.x - x)<10 && Math.abs(r.y - y)<10){ detectedBib = true; break; }
+        }
 
-        // Draw bounding box
-        ctx.strokeStyle = "red";
+        ctx.strokeStyle = detectedBib ? "green" : "red";
         ctx.lineWidth = 3;
         ctx.strokeRect(x, y, width, height);
         ctx.font = "18px Arial";
-        ctx.fillStyle = "red";
+        ctx.fillStyle = ctx.strokeStyle;
         ctx.fillText(p.className + " " + Math.round(p.confidence*100)+"%", x, y-5);
 
         const key = `${x}_${y}_${width}_${height}`;
-        if(!ocrQueue.has(key)) {
+        if(!ocrQueue.has(key)){
             ocrQueue.add(key);
             (async () => {
                 const cropCanvas = document.createElement('canvas');
-                cropCanvas.width = width;
-                cropCanvas.height = height;
+                cropCanvas.width = width/2; // downscale for speed
+                cropCanvas.height = height/2;
                 const cropCtx = cropCanvas.getContext('2d');
-                cropCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
+                cropCtx.drawImage(video, x, y, width, height, 0, 0, cropCanvas.width, cropCanvas.height);
                 const cropDataUrl = cropCanvas.toDataURL();
 
-                const { data:{ text } } = await Tesseract.recognize(cropDataUrl, 'eng', {
-                    tessedit_char_whitelist: '0123456789'
-                });
-
+                const { data: { text } } = await ocrWorker.recognize(cropDataUrl);
                 const bib = text.match(/\d{2,6}/)?.[0];
-                if(bib && !results.find(r=>r.bib===bib)) {
+                if(bib && !results.find(r=>r.bib===bib)){
                     const timestamp = new Date().toLocaleString();
-                    results.push({ bib, timestamp });
+                    results.push({ bib, timestamp, x, y });
                     const row = document.getElementById("resultsTable").insertRow();
                     row.insertCell(0).innerText = bib;
                     row.insertCell(1).innerText = timestamp;
@@ -138,6 +113,7 @@ function downloadCSV() {
     a.download = "bib_results.csv";
     a.click();
 }
+
+startBtn.addEventListener("click", startDetection);
+stopBtn.addEventListener("click", stopDetection);
 </script>
-</body>
-</html>
