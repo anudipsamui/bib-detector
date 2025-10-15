@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>BIB Detector - Roboflow + OCR</title>
+<title>BIB Detector</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 body { font-family: sans-serif; text-align: center; background: #fafafa; margin: 0; padding: 20px; }
@@ -17,7 +17,7 @@ table, th, td { border: 1px solid black; padding: 5px 10px; }
 <body>
 
 <h1>BIB Detector</h1>
-<button id="startBtn">Start Detection</button>
+<button id="startBtn">Start Camera & Detection</button>
 <button id="downloadBtn">Download CSV</button>
 
 <div id="videoContainer">
@@ -30,7 +30,6 @@ table, th, td { border: 1px solid black; padding: 5px 10px; }
   <tr><th>BIB Number</th><th>Timestamp</th></tr>
 </table>
 
-<!-- All detection code in a single ES module -->
 <script type="module">
 import { Roboflow } from "https://unpkg.com/@roboflow/inference-browser@1.1.0/dist/roboflow-inference.min.js";
 
@@ -43,12 +42,15 @@ const downloadBtn = document.getElementById('downloadBtn');
 let model;
 let detectedBibs = new Set();
 
+// Roboflow settings
 const ROBFLOW_PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1";
 const PROJECT_NAME = "bib-number-labeling";
 const MODEL_VERSION = "2";
 
+// Main start button
 startBtn.addEventListener('click', async () => {
     try {
+        // 1️⃣ Open camera first (must be user gesture)
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
         video.srcObject = stream;
         video.style.display = "block";
@@ -57,26 +59,29 @@ startBtn.addEventListener('click', async () => {
         overlay.width = video.videoWidth;
         overlay.height = video.videoHeight;
 
+        // 2️⃣ Load Roboflow model
         const rf = new Roboflow({ apiKey: ROBFLOW_PUBLISHABLE_KEY });
         model = await rf.load(PROJECT_NAME, MODEL_VERSION);
 
         startBtn.disabled = true;
         startBtn.innerText = "Detecting...";
 
+        // 3️⃣ Start detection loop
         requestAnimationFrame(detectLoop);
-    } catch(err) {
-        console.error("Failed to start:", err);
-        alert("Camera or model failed: " + err.message);
+    } catch (err) {
+        console.error("Failed to start camera or model:", err);
+        alert(err.message);
     }
 });
 
+// Detection loop
 async function detectLoop() {
     if (!model) return;
 
     try {
         const predictions = await model.predict(video);
 
-        ctx.clearRect(0,0,overlay.width,overlay.height);
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
 
         for (const p of predictions) {
             const { x, y, width, height, className } = p;
@@ -87,16 +92,16 @@ async function detectLoop() {
             ctx.strokeRect(x, y, width, height);
             ctx.font = "18px Arial";
             ctx.fillStyle = "red";
-            ctx.fillText(className, x, y-5);
+            ctx.fillText(className, x, y - 5);
 
-            // Crop box for OCR
+            // Crop the detected box for OCR
             const cropCanvas = document.createElement('canvas');
             cropCanvas.width = width;
             cropCanvas.height = height;
             const cropCtx = cropCanvas.getContext('2d');
             cropCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
 
-            // OCR using Tesseract
+            // OCR with Tesseract
             const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
             const bibNumber = text.replace(/\D/g,'').trim();
             if (bibNumber && !detectedBibs.has(bibNumber)) {
@@ -111,6 +116,7 @@ async function detectLoop() {
     requestAnimationFrame(detectLoop);
 }
 
+// Add BIB to table
 function addToTable(bib) {
     const table = document.getElementById('bibTable');
     const row = table.insertRow(-1);
@@ -118,6 +124,7 @@ function addToTable(bib) {
     row.insertCell(1).innerText = new Date().toLocaleTimeString();
 }
 
+// CSV download
 downloadBtn.addEventListener('click', () => {
     const table = document.getElementById('bibTable');
     let csv = '';
