@@ -2,15 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>BIB Detector - Roboflow SDK + OCR</title>
+<title>BIB Detector - Roboflow + OCR</title>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-
-<!-- Roboflow Browser SDK -->
-<script type="module">
-  import { Roboflow } from "https://unpkg.com/@roboflow/inference-browser@1.1.0/dist/roboflow-inference.min.js";
-  window.Roboflow = Roboflow; // expose globally
-</script>
-
+<script src="https://unpkg.com/@roboflow/inference-browser@1.1.0/dist/roboflow-inference.umd.js"></script>
 <style>
 body { font-family: sans-serif; text-align: center; background: #fafafa; margin: 0; padding: 20px; }
 #videoContainer { position: relative; display: inline-block; margin-top: 20px; }
@@ -48,7 +42,7 @@ let stream;
 let model;
 
 // --- Roboflow Settings ---
-const ROBFLOW_PUBLISHABLE_KEY = "rf_3HHrpOkdE4arP6EJhtDqcxZMpyf1";
+const ROBFLOW_PUBLISHABLE_KEY = "[YOUR_PUBLISHABLE_KEY]";
 const PROJECT_NAME = "bib-number-labeling";
 const MODEL_VERSION = "2";
 
@@ -63,14 +57,13 @@ startBtn.addEventListener('click', async () => {
         overlay.width = video.videoWidth;
         overlay.height = video.videoHeight;
 
-        // Load Roboflow model
+        // Load Roboflow model (UMD exposes Roboflow globally)
         const rf = new Roboflow({ apiKey: ROBFLOW_PUBLISHABLE_KEY });
         model = await rf.load(PROJECT_NAME, MODEL_VERSION);
 
         startBtn.disabled = true;
         startBtn.innerText = "Detecting...";
 
-        // Start detection loop
         detectLoop();
     } catch(err) {
         alert("Failed to start: " + err.message);
@@ -82,7 +75,6 @@ async function detectLoop() {
     if (!model) return;
 
     try {
-        // Predict on video element
         const predictions = await model.predict(video);
 
         ctx.clearRect(0, 0, overlay.width, overlay.height);
@@ -90,7 +82,6 @@ async function detectLoop() {
         for (const p of predictions) {
             const { x, y, width, height, className } = p;
 
-            // Draw bounding box
             ctx.strokeStyle = "red";
             ctx.lineWidth = 3;
             ctx.strokeRect(x, y, width, height);
@@ -98,14 +89,12 @@ async function detectLoop() {
             ctx.fillStyle = "red";
             ctx.fillText(className, x, y - 5);
 
-            // Crop box for OCR
             const cropCanvas = document.createElement('canvas');
             cropCanvas.width = width;
             cropCanvas.height = height;
             const cropCtx = cropCanvas.getContext('2d');
             cropCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
 
-            // OCR using Tesseract
             const { data: { text } } = await Tesseract.recognize(cropCanvas, 'eng');
             const bibNumber = text.replace(/\D/g,'').trim();
             if (bibNumber) addToTable(bibNumber);
@@ -114,7 +103,6 @@ async function detectLoop() {
         console.error("Detection error:", err);
     }
 
-    // Repeat next frame
     requestAnimationFrame(detectLoop);
 }
 
